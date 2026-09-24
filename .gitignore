@@ -1,0 +1,27 @@
+# Workbooks and data files - these hold live stock / customer data
+*.xlsm
+*.xlsx
+*.xlsb
+*.xls
+*.xlam
+*.csv
+
+# Excel lock / temp files
+~$*
+*.tmp
+
+# Backups and working copies
+*BACKUP*
+*backup*
+picklist backup/
+
+# Anything with credentials or local paths
+*.odc
+*.udl
+.env
+*.pem
+
+# OS / editor
+Thumbs.db
+desktop.ini
+.vscode/

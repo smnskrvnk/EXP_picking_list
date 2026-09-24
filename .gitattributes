@@ -1,0 +1,7 @@
+# VBA sources: keep Windows line endings so they import cleanly
+*.bas text eol=crlf
+*.cls text eol=crlf
+*.frm text eol=crlf
+
+# Docs
+*.md text eol=lf
