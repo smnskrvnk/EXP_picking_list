@@ -8,7 +8,7 @@ Option Explicit
 ' 1. Obnovi data skladu (STOCK) a nacita polozky zo zvoleneho zdroja
 '    (PLAN alebo CSS). Stary zoznam sa maze az potom, takze pri
 '    predcasnom ukonceni ostane predchadzajuci zoznam nezmeneny.
-' 2. Pre kazdu polozku najde PACK SIZE (harok PACK_SIZE); ak chyba,
+' 2. Pre kazdu polozku najde PACK SIZE (harok PACKAGING); ak chyba,
 '    polozka sa preskoci (s hlaskou). Potom spocita dostupne kusy,
 '    podla lokacie z harka STOCK (C = stav, G = lokacia,
 '    H = cislo dielu, R = mnozstvo).
@@ -35,7 +35,7 @@ Sub Vytvor_zoznam()
     ' ==============================
 
     Dim wsStock As Worksheet
-    Dim wsPack As Worksheet
+    Dim packDict As Object
     Dim wsDest As Worksheet
     Dim prevSU As Boolean
 
@@ -114,6 +114,11 @@ Sub Vytvor_zoznam()
 
     RefreshStock
 
+    ' velkosti balenia z dotazu Packaging; pri zlyhani obnovenia sa pouzivatela opyta
+    If Not RefreshPackaging() Then GoTo CleanExit
+    Set packDict = LoadPackSizes()
+    If packDict Is Nothing Then GoTo CleanExit
+
     ' ==============================
     ' NACITAT POLOZKY Z VYBRANEHO ZDROJA
     ' vykona sa PRED zmazanim stareho zoznamu, takze predcasne ukoncenie
@@ -150,7 +155,6 @@ Sub Vytvor_zoznam()
     ' ==============================
 
     Set wsStock = Worksheets("STOCK")
-    Set wsPack = Worksheets("PACK_SIZE")
 
     On Error Resume Next
     Application.DisplayAlerts = False
@@ -193,12 +197,11 @@ Sub Vytvor_zoznam()
         ' ==============================
 
         packSize = 0
-        On Error Resume Next
-        packSize = Application.VLookup(planPN, wsPack.Range("B:C"), 2, False)
-        On Error GoTo CleanFail
+        If packDict.Exists(planPN) Then packSize = packDict(planPN)
 
         If packSize = 0 Then
-            MsgBox "Chýba PACK SIZE pre položku: " & planPN
+            MsgBox "Chýba PACK SIZE pre položku: " & planPN & vbCrLf & _
+                   "(skontroluj hárok Packaging v súbore PLAN)"
             GoTo NextItem
         End If
         
@@ -248,7 +251,7 @@ Sub Vytvor_zoznam()
                 If UCase(Trim(CStr(stockData(j, 3)))) = "PICKED" Then GoTo SkipLocation
 
                 If packQty > 0 Then
-                    If Not locationTotals.exists(location) Then
+                    If Not locationTotals.Exists(location) Then
                         locationTotals.Add location, packQty
                     Else
                         locationTotals(location) = locationTotals(location) + packQty
@@ -544,10 +547,10 @@ Public Function RefreshPlan() As Boolean
         Exit Function
     End If
 
-    planPath = Trim(CStr(ThisWorkbook.Worksheets("PACK_SIZE").Cells(PLAN_PATH_ROW, CSS_PATH_COL).Value))
+    planPath = ResolvePath(PATH_PLAN_NAME)
     If planPath = "" Then
         MsgBox "Cesta k PLAN súboru je prázdna." & vbCrLf & _
-               "Zadaj cestu do hárku PACK_SIZE, bunka X1.", vbExclamation
+               "Zadaj cestu do hárku NASTAVENIA.", vbExclamation
         Exit Function
     End If
 

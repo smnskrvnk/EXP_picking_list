@@ -29,6 +29,77 @@ Public Sub RefreshStock()
     Next lo
 End Sub
 
+' Obnovi dotaz Packaging (velkosti balenia z harku Packaging v subore PLAN).
+' RefreshStock chyby ignoruje; tu sa po obnoveni overi cas nacitania
+' (stlpec LoadedAt), aby sa neaktualne udaje nepouzili bez upozornenia.
+' Vrati sa True, ak moze pokracovat: udaje su cerstve, alebo pouzivatel
+' potvrdil pouzitie poslednych nacitanych udajov.
+Public Function RefreshPackaging() As Boolean
+
+    Dim lo As ListObject
+    Dim stampCol As Long
+    Dim loadedAt As Variant
+    Dim ageMin As Double
+    Dim problem As String
+    
+    RefreshPackaging = False
+    
+    On Error Resume Next
+    Set lo = ThisWorkbook.Worksheets(PACKAGING_SHEET).ListObjects(1)
+    On Error GoTo 0
+    
+    If lo Is Nothing Then
+        MsgBox "Hárok " & PACKAGING_SHEET & " neobsahuje tabuľku s veľkosťami balení." & vbCrLf & _
+                "Vytvor dotaz Packaging (Údaje > Získať údaje).", vbCritical
+        Exit Function
+    End If
+    
+    ' obnovenie - chyba sa zachyti, nie ignoruje
+    SyncPackagingPath                         ' cesta dotazu podla PATH_PLAN
+    On Error Resume Next
+    lo.QueryTable.Refresh BackgroundQuery:=False
+    If Err.Number <> 0 Then problem = Err.Number & ": " & Err.Description
+    On Error GoTo 0
+    
+    ' aj bez chyby over, ze udaje su naozaj cerstve
+    If problem = "" Then
+        On Error Resume Next
+        stampCol = lo.ListColumns(PKG_STAMP_HEADER).Index
+        On Error GoTo 0
+
+        If stampCol = 0 Then
+            problem = "chýba stĺpec " & PKG_STAMP_HEADER
+        ElseIf lo.DataBodyRange Is Nothing Then
+            problem = "tabuľka je prázdna"
+        Else
+            loadedAt = lo.DataBodyRange.Cells(1, stampCol).Value
+            If IsError(loadedAt) Then
+                problem = "neplatný čas načítania"
+            ElseIf Not (IsDate(loadedAt) Or IsNumeric(loadedAt)) Then
+                problem = "neplatný čas načítania"
+            Else
+                ageMin = (CDbl(Now) - CDbl(loadedAt)) * 1440
+                If ageMin > PKG_MAX_AGE_MIN Then
+                    problem = "údaje sú staré " & Format(ageMin, "0") & " min"
+                End If
+            End If
+        End If
+    End If
+
+    If problem = "" Then
+        RefreshPackaging = True
+        Exit Function
+    End If
+
+    RefreshPackaging = (MsgBox( _
+        "Obnovenie veľkostí balení (hárok " & PACKAGING_SHEET & ") sa nepodarilo:" & vbCrLf & _
+        problem & vbCrLf & vbCrLf & _
+        "Skontroluj, či je dostupný súbor PLAN." & vbCrLf & _
+        "Použiť posledné načítané veľkosti balení?", _
+        vbYesNo + vbExclamation, "Veľkosti balení") = vbYes)
+
+End Function
+
 Private Function Stamp() As String
     Stamp = Format(Now(), "DD.MM.YYYY HH:NN")
 End Function

@@ -19,13 +19,20 @@ Public Const PANEL_SOURCE_CELL    As String = "B5"           ' PLAN / CSS
 Public Const PANEL_DATE_CELL      As String = "F5"           ' zvoleny datum exportu
 
 ' pomocne bunky harku PACK_SIZE
-Public Const PLAN_PATH_ROW      As Long = 1                ' X1 = cesta k suboru PLAN
-Public Const CSS_PATH_ROW       As Long = 2                ' X2 = cesta k suboru CSS
-Public Const CSS_PATH_COL       As Long = 24               ' stlpec X
 Public Const CSS_LIST_COL       As Long = 26               ' stlpec Z = zoznam datumov pre validaciu
 
 ' Kolko vypocitanych pracovnych dni ponuknut, ak CSS este nie je nacitane
 Public Const EXPORT_FALLBACK_DAYS As Long = 15
+
+' Harok PACKAGING - lokalna kopia velkosti balenia z harku Packaging (power queryy)
+Public Const PACKAGING_SHEET As String = "PACKAGING"
+Public Const PACKAGING_QUERY As String = "Packaging"    ' nazov dotazu Power Query
+Public Const PKG_STAMP_HEADER As String = "LoadedAt"    ' stlpec s casom nacitania
+Public Const PKG_MAX_AGE_MIN As Long = 5                ' starsie udaje = obnovenie zlyhalo
+
+' Nazvy pomenovanych buniek na harku NASTAVENIA (cesty k suborom)
+Public Const PATH_PLAN_NAME As String = "PATH_PLAN"
+Public Const PATH_CSS_NAME  As String = "PATH_CSS"
 
 ' ==============================================================
 ' MAIN - obnovi lokalny harok CSS zo suboru CSS
@@ -43,11 +50,11 @@ Sub RefreshCSS()
     Dim errDesc As String
     Dim usedLast As Long
 
-    cssPath = Trim(CStr(ThisWorkbook.Worksheets("PACK_SIZE").Cells(CSS_PATH_ROW, CSS_PATH_COL).Value))
+    cssPath = ResolvePath(PATH_CSS_NAME)
 
     If cssPath = "" Then
         MsgBox "Cesta k CSS súboru je prázdna." & vbCrLf & _
-               "Zadaj cestu do hárku PACK_SIZE, bunka X2.", vbExclamation
+               "Zadaj cestu do hárku NASTAVENIA.", vbExclamation
         Exit Sub
     End If
 
@@ -157,7 +164,6 @@ End Sub
 ' - inak sa pouzije najblizsich EXPORT_FALLBACK_DAYS pracovnych dni
 ' Zapise zoznam do stlpca Z harku PACK_SIZE, znovu vytvori pomenovany rozsah
 ' CSS_DATES a validaciu v F5, a zachova aktualny vyber, ak je platny.
-' (Nahradza povodnu funkciu BuildCSSDateList)
 ' ==============================================================
 Public Sub BuildExportDateList()
 
@@ -209,7 +215,7 @@ Public Sub BuildExportDateList()
         .InCellDropdown = True
     End With
 
-    ' zachova predchadzajuci vyber, ak stale existuje, inak vezme prvy datum
+    ' zachova predchadzajuci vyber - ak stale existuje, inak vezme prvy datum
     If keep <> "" And _
        Not IsError(Application.Match(keep, wsPack.Range(wsPack.Cells(1, CSS_LIST_COL), _
                                                         wsPack.Cells(n, CSS_LIST_COL)), 0)) Then
@@ -263,7 +269,7 @@ End Function
 
 ' ==============================================================
 ' PANEL F5 ako skutocny Date. Vrati 0, ak je F5 prazdne/nie je datum.
-' Explicitne parsuje "DD.MM.YYYY", takze to nezavisi od
+' Vyslovene parsuje "DD.MM.YYYY", takze to nezavisi od
 ' regionalneho nastavenia pocitaca
 ' ==============================================================
 Public Function ExportDate() As Date
@@ -297,7 +303,7 @@ Public Function ExportDate() As Date
 End Function
 
 ' ==============================================================
-' TRUE, ak lokaly harok CSS aktualne obsahuje stlpce s datumami FIX
+' TRUE, ak lokalny harok CSS aktualne obsahuje stlpce s datumami FIX
 ' ==============================================================
 Public Function CSSHasData() As Boolean
 
@@ -413,6 +419,70 @@ Public Function FindHeaderCol(ws As Worksheet, headerRow As Long, headerText As 
             End If
         End If
     Next c
+
+End Function
+
+' ==============================================================
+' Vrati cestu z pomenovanej bunky na harku NASTAVENIA a nahradi
+' %USERPROFILE% skutocnym priecinkom prihlaseneho pouzivatela,
+' takze rovnaky zosit funguje na roznych PC aj uctoch.
+' Vrati "" (prazdny retazec), ak bunka neexistuje alebo je prazdna.
+' ==============================================================
+Public Function ResolvePath(ByVal rangeName As String) As String
+
+    Dim raw As String
+
+    On Error Resume Next
+    raw = Trim(CStr(ThisWorkbook.Names(rangeName).RefersToRange.Value))
+    On Error GoTo 0
+
+    If raw = "" Then Exit Function
+
+    ResolvePath = Replace(raw, "%USERPROFILE%", Environ$("USERPROFILE"), 1, -1, vbTextCompare)
+
+End Function
+
+' ==============================================================
+' Nastavi cestu k suboru PLAN v dotaze Packaging (power query) podla
+' pomenovanej bunky PATH_PLAN, aby sa cesta udrziavala na jednom mieste.
+' Zapisuje sa len vtedy, ked sa cesta lisi. Vrati True, ak je dotaz
+' po volani nastaveny na spravnu cestu.
+' ==============================================================
+Public Function SyncPackagingPath() As Boolean
+
+    Dim newPath As String
+    Dim oldPath As String
+    Dim m As String
+    Dim marker As String
+    Dim p1 As Long
+    Dim p2 As Long
+
+    SyncPackagingPath = False
+
+    newPath = ResolvePath(PATH_PLAN_NAME)
+    If newPath = "" Then Exit Function
+
+    On Error GoTo Fail
+
+    m = ThisWorkbook.Queries(PACKAGING_QUERY).Formula
+
+    marker = "File.Contents("""
+    p1 = InStr(1, m, marker, vbTextCompare)
+    If p1 = 0 Then Exit Function              ' necakany tvar dotazu - nemenit
+    p1 = p1 + Len(marker)
+    p2 = InStr(p1, m, """")
+    If p2 = 0 Then Exit Function
+
+    oldPath = Mid(m, p1, p2 - p1)
+    If StrComp(oldPath, newPath, vbTextCompare) <> 0 Then
+        ThisWorkbook.Queries(PACKAGING_QUERY).Formula = Left(m, p1 - 1) & newPath & Mid(m, p2)
+    End If
+
+    SyncPackagingPath = True
+    Exit Function
+
+Fail:
+    SyncPackagingPath = False
 
 End Function
 
@@ -651,6 +721,53 @@ NextRow:
     Next r
 
     LoadItemsCSS = cnt
+
+End Function
+
+' ==============================================================
+' Nacita velkosti balenia z harku PACKAGING (dotaz Packaging) do slovnika:
+' cislo dielu (VELKE, bez medzier) -> PACK SIZE. Riadky s velkostou <= 0
+' sa ignoruju; pri duplicitach plati prvy platny riadok.
+' Vrati Nothing (so spravou), ak tabulka chyba alebo je prazdna.
+' ==============================================================
+Public Function LoadPackSizes() As Object
+
+    Dim lo As ListObject
+    Dim data As Variant
+    Dim d As Object
+    Dim i As Long
+    Dim k As String
+    Dim v As Double
+
+    On Error Resume Next
+    Set lo = ThisWorkbook.Worksheets(PACKAGING_SHEET).ListObjects(1)
+    On Error GoTo 0
+
+    If lo Is Nothing Then
+        MsgBox "Hárok " & PACKAGING_SHEET & " neobsahuje tabuľku s veľkosťami balení." & vbCrLf & _
+               "Vytvor dotaz Packaging (Údaje > Získať údaje).", vbCritical
+        Exit Function
+    End If
+    If lo.DataBodyRange Is Nothing Then
+        MsgBox "Tabuľka na hárku " & PACKAGING_SHEET & " je prázdna.", vbCritical
+        Exit Function
+    End If
+
+    Set d = CreateObject("Scripting.Dictionary")
+
+    ' stlpec 2 = cislo dielu, stlpec 3 = velkost balenia
+    data = lo.DataBodyRange.Value
+    For i = 1 To UBound(data, 1)
+        If Not IsError(data(i, 2)) And Not IsError(data(i, 3)) Then
+            k = UCase(Trim(CStr(data(i, 2))))
+            If k <> "" And IsNumeric(data(i, 3)) Then
+                v = CDbl(data(i, 3))
+                If v > 0 And Not d.Exists(k) Then d.Add k, CLng(v)
+            End If
+        End If
+    Next i
+
+    Set LoadPackSizes = d
 
 End Function
 

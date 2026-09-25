@@ -1,5 +1,8 @@
 # Build history — CSS source addition
 
+> Covers the build up to Step 6 (10.09.2026). Later changes — whole-pack rule,
+> Packaging query, settings sheet — are recorded in `PICKING_LIST.md`, section 7.
+
 Working document. Status as of 10.09.2026.
 
 **Steps 3–6 are DONE and applied to `_shippingPlan_v04_PANEL_WORKING.xlsm`.**
